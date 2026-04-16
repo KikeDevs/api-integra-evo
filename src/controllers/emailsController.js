@@ -1,10 +1,30 @@
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import sequelize from "../config/database.js"
 
-
 dotenv.config();
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const LOG_DIR  = path.join(__dirname, '../../logs');
+const LOG_FILE = path.join(LOG_DIR, 'emails_errors.txt');
+
+function logEmailError({ id_pago, id_servicio, destinatario, error }) {
+    if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
+
+    const linea = [
+        `[${new Date().toISOString()}]`,
+        `ID_PAGO=${id_pago ?? 'N/A'}`,
+        `ID_SERVICIO=${id_servicio ?? 'N/A'}`,
+        `DESTINATARIO=${destinatario ?? 'N/A'}`,
+        `ERROR=${error}`,
+    ].join(' | ') + '\n';
+
+    fs.appendFileSync(LOG_FILE, linea, 'utf8');
+}
 
 export const sendEmail = async (req, res) => {
 
@@ -73,10 +93,9 @@ export const sendEmail = async (req, res) => {
                           <p style="margin: 0px"><small>Este mensaje fue generado automáticamente. No respondas este correo</small></p>
                           <img style="width: 60px;" src="/var/www/html/api_evo/public/img/LogoIntegraSVGSnTexto.svg" alt="Logo_integra">
                         </div>`,
-                attachments: [{
-                    filename: archivo,
-                    path: `/var/www/integra/storage/general/${archivo}`
-                }]
+                attachments: archivo
+                    ? [{ filename: archivo, path: `/var/www/integra/storage/general/${archivo}` }]
+                    : []
             };
 
             await transporter.sendMail(mailOptions);
@@ -101,6 +120,12 @@ export const sendEmail = async (req, res) => {
         res.status(200).json({ success: true, message: 'Correo enviado correctamente' });
     } catch (error) {
         console.error('Error al enviar el correo:', error);
+        logEmailError({
+            id_pago,
+            id_servicio,
+            destinatario: users?.map(u => u.correo_empresarial).join(', '),
+            error: error.message
+        });
         await t.rollback();
         res.status(500).json({ success: false, message: error.message });
     }
