@@ -26,6 +26,30 @@ function logEmailError({ id_pago, id_servicio, destinatario, error }) {
     fs.appendFileSync(LOG_FILE, linea, 'utf8');
 }
 
+export const testEmail = async (req, res) => {
+    const transporter = nodemailer.createTransport({
+        host: process.env.EMAIL_HOST,
+        port: process.env.EMAIL_PORT,
+        secure: process.env.EMAIL_SECURE,
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
+        }
+    });
+
+    try {
+        await transporter.sendMail({
+            from: process.env.EMAIL_USER,
+            to: 'infr.fullstack@hovanet.com',
+            subject: 'Test de correo - INTEGRA',
+            html: `<p>Este es un correo de prueba enviado desde la API de INTEGRA.</p><p>Hora: ${new Date().toISOString()}</p>`
+        });
+        res.status(200).json({ success: true, message: 'Correo de prueba enviado a infr.fullstack@hovanet.com' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 export const sendEmail = async (req, res) => {
 
     const url = "integra.infrahub.services";
