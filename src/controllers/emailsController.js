@@ -27,6 +27,22 @@ function logEmailError({ id_pago, id_servicio, destinatario, error }) {
 }
 
 export const testEmail = async (req, res) => {
+    const report = [];
+    const mark = (msg) => report.push({ ms: Date.now() - start, paso: msg });
+    const start = Date.now();
+
+    const config = {
+        host: process.env.EMAIL_HOST,
+        port: process.env.EMAIL_PORT,
+        secure: process.env.EMAIL_SECURE,
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS ? '***' : '(vacío)'
+        }
+    };
+
+    mark(`Configuración SMTP: host=${config.host} port=${config.port} secure=${config.secure} user=${config.auth.user}`);
+
     const transporter = nodemailer.createTransport({
         host: process.env.EMAIL_HOST,
         port: process.env.EMAIL_PORT,
@@ -38,15 +54,23 @@ export const testEmail = async (req, res) => {
     });
 
     try {
-        await transporter.sendMail({
+        mark('Verificando conexión SMTP...');
+        await transporter.verify();
+        mark('Conexión SMTP OK');
+
+        mark('Enviando correo...');
+        const info = await transporter.sendMail({
             from: process.env.EMAIL_USER,
             to: 'infr.fullstack@hovanet.com',
             subject: 'Test de correo - INTEGRA',
             html: `<p>Este es un correo de prueba enviado desde la API de INTEGRA.</p><p>Hora: ${new Date().toISOString()}</p>`
         });
-        res.status(200).json({ success: true, message: 'Correo de prueba enviado a infr.fullstack@hovanet.com' });
+        mark(`Correo enviado. messageId=${info.messageId} response=${info.response}`);
+
+        res.status(200).json({ success: true, report });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        mark(`ERROR: ${error.message}`);
+        res.status(500).json({ success: false, report, error: error.message });
     }
 };
 
@@ -54,7 +78,16 @@ export const sendEmail = async (req, res) => {
 
     const url = "integra.infrahub.services";
     
-    const { asunto, descripcion, archivo, users, id_pago, id_servicio} = req.body;
+    const {
+        asunto,
+        descripcion,
+        archivo,
+        users,
+        id_pago,
+        id_servicio,
+        id_estatus,
+        id_Estatus
+    } = req.body;
 
     if (!users || !Array.isArray(users) || users.length === 0) {
         return res.status(400).json({ success: false, message: "No se recibieron destinatarios" });
@@ -98,6 +131,11 @@ export const sendEmail = async (req, res) => {
     .replace(/>/g, '&gt;')
     .replace(/\n/g, '<br>');
 
+    const estatusPago = Number(id_estatus ?? id_Estatus);
+    const textoAccionPago = estatusPago === 5
+        ? 'Justifica el pago aquí'
+        : 'Registra el pago aquí';
+
 
 
     try {
@@ -111,7 +149,7 @@ export const sendEmail = async (req, res) => {
                 html: `
                         <p>Hola, ${d.nombre}! </p>
                         <p>${descripcionHtml}</p>
-                        <p style="margin-bottom: 35px">Puedes notificar el pago accediendo al siguiente link de USO ÚNICO:<a href="https://${url}/integra/#!/servicios/subirPago/${token}"><b> Registra el pago aquí</b></a></p>
+                        <p style="margin-bottom: 35px">Puedes notificar el pago accediendo al siguiente link de USO ÚNICO:<a href="https://${url}/integra/#!/servicios/subirPago/${token}"><b> ${textoAccionPago}</b></a></p>
                         <div style="text-align: center; display: flex; flex-direction: column; align-items: center; justify-content:center; gap: 5px;">
                           <p style="font-style: italic; color: #4e73df; margin: 0px"><b>INTEGRA</b> | Sistema web de pagos</p>
                           <p style="margin: 0px"><small>Este mensaje fue generado automáticamente. No respondas este correo</small></p>
