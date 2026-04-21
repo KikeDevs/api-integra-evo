@@ -132,6 +132,7 @@ export const sendEmail = async (req, res) => {
     .replace(/\n/g, '<br>');
 
     const estatusPago = Number(id_estatus ?? id_Estatus);
+    console.log(estatusPago);
     const textoAccionPago = estatusPago === 5
         ? 'Justifica el pago aquí'
         : 'Registra el pago aquí';
