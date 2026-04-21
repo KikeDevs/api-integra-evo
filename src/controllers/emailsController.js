@@ -26,6 +26,20 @@ function logEmailError({ id_pago, id_servicio, destinatario, error }) {
     fs.appendFileSync(LOG_FILE, linea, 'utf8');
 }
 
+function parseEstatusPago(payload = {}) {
+    const rawEstatus =
+        payload.id_estatus ??
+        payload.id_Estatus ??
+        payload.idEstatus ??
+        payload.estatus?.id_estatus ??
+        payload.pago?.id_estatus;
+
+    if (rawEstatus === undefined || rawEstatus === null) return null;
+
+    const estatus = Number(String(rawEstatus).trim());
+    return Number.isFinite(estatus) ? estatus : null;
+}
+
 export const testEmail = async (req, res) => {
     const report = [];
     const mark = (msg) => report.push({ ms: Date.now() - start, paso: msg });
@@ -84,9 +98,7 @@ export const sendEmail = async (req, res) => {
         archivo,
         users,
         id_pago,
-        id_servicio,
-        id_estatus,
-        id_Estatus
+        id_servicio
     } = req.body;
 
     if (!users || !Array.isArray(users) || users.length === 0) {
@@ -131,8 +143,7 @@ export const sendEmail = async (req, res) => {
     .replace(/>/g, '&gt;')
     .replace(/\n/g, '<br>');
 
-    const estatusPago = Number(id_estatus ?? id_Estatus);
-    console.log(estatusPago);
+    const estatusPago = parseEstatusPago(req.body);
     const textoAccionPago = estatusPago === 5
         ? 'Justifica el pago aquí'
         : 'Registra el pago aquí';
