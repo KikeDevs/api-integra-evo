@@ -40,6 +40,32 @@ function parseEstatusPago(payload = {}) {
     return Number.isFinite(estatus) ? estatus : null;
 }
 
+export const getEmailErrors = (_req, res) => {
+    if (!fs.existsSync(LOG_FILE)) {
+        return res.status(200).json({ success: true, errors: [] });
+    }
+
+    const lines = fs.readFileSync(LOG_FILE, 'utf8')
+        .split('\n')
+        .filter(Boolean);
+
+    const errors = lines.map(line => {
+        const parts = {};
+        line.split(' | ').forEach(segment => {
+            const idx = segment.indexOf('=');
+            if (idx === -1) {
+                parts.timestamp = segment.replace(/^\[|\]$/g, '');
+            } else {
+                const key = segment.slice(0, idx).toLowerCase();
+                parts[key] = segment.slice(idx + 1);
+            }
+        });
+        return parts;
+    });
+
+    res.status(200).json({ success: true, total: errors.length, errors });
+};
+
 export const testEmail = async (req, res) => {
     const report = [];
     const mark = (msg) => report.push({ ms: Date.now() - start, paso: msg });
@@ -137,6 +163,11 @@ export const sendEmail = async (req, res) => {
         }
     );
 
+    await sequelize.query(
+        `INSERT INTO activos.pagos_eventos (id_pago, evento) VALUES (?, 'link_generado')`,
+        { replacements: [id_pago], transaction: t }
+    );
+
     const descripcionHtml = descripcion
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -182,10 +213,18 @@ export const sendEmail = async (req, res) => {
                 {
                     replacements: [
                         id_pago,
-                        process.env.EMAIL_USER,     // remitente
+                        process.env.EMAIL_USER,
                         d.correo_empresarial,
-                        id_servicio        // destinatario
+                        id_servicio
                     ],
+                    transaction: t
+                }
+            );
+
+            await sequelize.query(
+                `INSERT INTO activos.pagos_eventos (id_pago, evento, detalle) VALUES (?, 'email_enviado', ?)`,
+                {
+                    replacements: [id_pago, JSON.stringify({ destinatario: d.correo_empresarial })],
                     transaction: t
                 }
             );

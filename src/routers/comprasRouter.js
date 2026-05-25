@@ -5,11 +5,11 @@ import {crearEquipos, getCorrecciones, guardarCorrecciones, guardarEquipos} from
 
 const comprasRouter = new Router();
 
-comprasRouter.get('/', getAll);
+comprasRouter.get('/', authenticateToken, getAll);
 comprasRouter.post('/', authenticateToken, crearCompra, crearEquipos);
-comprasRouter.post('/inventario', guardarEquipos);
-comprasRouter.post('/correcciones', guardarCorrecciones);
-comprasRouter.get('/correcciones', getCorrecciones);
+comprasRouter.post('/inventario', authenticateToken, guardarEquipos);
+comprasRouter.post('/correcciones', authenticateToken, guardarCorrecciones);
+comprasRouter.get('/correcciones', authenticateToken, getCorrecciones);
 
 
 
