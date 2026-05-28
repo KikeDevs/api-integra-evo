@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { promises as dns } from 'dns';
 import sequelize from "../config/database.js"
 
 dotenv.config();
@@ -12,6 +13,20 @@ dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOG_DIR  = path.join(__dirname, '../../logs');
 const LOG_FILE = path.join(LOG_DIR, 'emails_errors.txt');
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+async function validarCorreo(correo) {
+    if (!EMAIL_REGEX.test(correo)) return { valido: false, motivo: 'invalido' };
+    const dominio = correo.split('@')[1];
+    try {
+        const mx = await dns.resolveMx(dominio);
+        if (!mx || mx.length === 0) return { valido: false, motivo: 'sin_mx' };
+    } catch {
+        return { valido: false, motivo: 'sin_mx' };
+    }
+    return { valido: true };
+}
 
 // 1x1 transparent GIF — devuelto por el pixel de tracking
 const PIXEL_GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
@@ -178,22 +193,35 @@ export const sendEmail = async (req, res) => {
 
         for (const d of users) {
 
-            // 1. Generar token único de tracking por destinatario
+            // 1. Validar formato y registros MX del correo antes de intentar enviar
+            const { valido, motivo } = await validarCorreo(d.correo_empresarial);
+
+            if (!valido) {
+                await sequelize.query(
+                    `INSERT INTO activos.correos_pagos (id_pago, remitente, destinatario, fecha_enviado, id_servicio, status)
+                     VALUES (?, ?, ?, NOW(), ?, ?)`,
+                    { replacements: [id_pago, process.env.EMAIL_USER, d.correo_empresarial, id_servicio, motivo], transaction: t }
+                );
+                smtpDebug.push({ destinatario: d.correo_empresarial, status: motivo, messageId: null, response: null });
+                continue;
+            }
+
+            // 2. Generar token único de tracking por destinatario
             const trackingToken = crypto.randomBytes(16).toString('hex');
 
             await sequelize.query(
-                `INSERT INTO activos.correos_pagos (id_pago, remitente, destinatario, fecha_enviado, id_servicio, tracking_token)
-                 VALUES (?, ?, ?, NOW(), ?, ?)`,
+                `INSERT INTO activos.correos_pagos (id_pago, remitente, destinatario, fecha_enviado, id_servicio, tracking_token, status)
+                 VALUES (?, ?, ?, NOW(), ?, ?, 'pendiente')`,
                 {
                     replacements: [id_pago, process.env.EMAIL_USER, d.correo_empresarial, id_servicio, trackingToken],
                     transaction: t
                 }
             );
 
-            // 2. Construir pixel de tracking con el token único
+            // 3. Construir pixel de tracking con el token único
             const pixelUrl = `${process.env.API_URL}/servicios/emails/track/${trackingToken}`;
 
-            // 3. Enviar el correo con el pixel embebido
+            // 4. Enviar el correo con el pixel embebido
             const info = await transporter.sendMail({
                 from: process.env.EMAIL_USER,
                 to: d.correo_empresarial,
@@ -215,10 +243,10 @@ export const sendEmail = async (req, res) => {
 
             smtpDebug.push({ destinatario: d.correo_empresarial, messageId: info.messageId, response: info.response });
 
-            // 4. Guardar confirmación SMTP — prueba de que Gmail aceptó el mensaje
+            // 5. Guardar confirmación SMTP — prueba de que Gmail aceptó el mensaje
             await sequelize.query(
                 `UPDATE activos.correos_pagos
-                 SET messageId = ?, smtp_response = ?
+                 SET messageId = ?, smtp_response = ?, status = 'enviado'
                  WHERE tracking_token = ?`,
                 {
                     replacements: [
@@ -270,7 +298,7 @@ export const trackEmail = async (req, res) => {
     try {
         // AND fecha_abierto IS NULL para no sobreescribir la primera apertura
         await sequelize.query(
-            `UPDATE activos.correos_pagos SET fecha_abierto = NOW() WHERE tracking_token = ? AND fecha_abierto IS NULL`,
+            `UPDATE activos.correos_pagos SET fecha_abierto = NOW(), status = 'abierto' WHERE tracking_token = ? AND fecha_abierto IS NULL`,
             { replacements: [id] }
         );
     } catch (err) {
@@ -299,7 +327,7 @@ export const getSentEmails = async (req, res) => {
     try {
         const [rows] = await sequelize.query(
             `SELECT id_correo, id_pago, id_servicio, destinatario, fecha_enviado,
-                    messageId, smtp_response, fecha_abierto
+                    messageId, smtp_response, fecha_abierto, bounced, bounce_reason, status
              FROM activos.correos_pagos
              ${where}
              ORDER BY fecha_enviado DESC
@@ -354,13 +382,13 @@ export const checkBounces = async (_req, res) => {
 
                 if (originalMsgId) {
                     const [, meta] = await sequelize.query(
-                        `UPDATE activos.correos_pagos SET bounced = 1, bounce_reason = ? WHERE messageId = ? AND bounced = 0`,
+                        `UPDATE activos.correos_pagos SET bounced = 1, bounce_reason = ?, status = 'rebotado' WHERE messageId = ? AND bounced = 0`,
                         { replacements: [msg.envelope.subject?.substring(0, 255), originalMsgId] }
                     );
                     updated = meta.affectedRows;
                 } else if (destinatario) {
                     const [, meta] = await sequelize.query(
-                        `UPDATE activos.correos_pagos SET bounced = 1, bounce_reason = ? WHERE LOWER(destinatario) = LOWER(?) AND bounced = 0`,
+                        `UPDATE activos.correos_pagos SET bounced = 1, bounce_reason = ?, status = 'rebotado' WHERE LOWER(destinatario) = LOWER(?) AND bounced = 0`,
                         { replacements: [msg.envelope.subject?.substring(0, 255), destinatario] }
                     );
                     updated = meta.affectedRows;
