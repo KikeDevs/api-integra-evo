@@ -173,6 +173,8 @@ export const sendEmail = async (req, res) => {
     const textoAccionPago = estatusPago === 5 ? 'Justifica el pago aquí' : 'Registra el pago aquí';
 
     try {
+        const smtpDebug = [];
+
         for (const d of users) {
 
             // 1. Insertar fila en correos_pagos primero para obtener el ID de tracking
@@ -209,6 +211,8 @@ export const sendEmail = async (req, res) => {
                     : []
             });
 
+            smtpDebug.push({ destinatario: d.correo_empresarial, messageId: info.messageId, response: info.response });
+
             // 4. Guardar confirmación SMTP — prueba de que Gmail aceptó el mensaje
             await sequelize.query(
                 `UPDATE activos.correos_pagos
@@ -234,7 +238,7 @@ export const sendEmail = async (req, res) => {
         }
 
         await t.commit();
-        res.status(200).json({ success: true, message: 'Correo enviado correctamente' });
+        res.status(200).json({ success: true, message: 'Correo enviado correctamente', debug_smtp: smtpDebug });
 
     } catch (error) {
         console.error('Error al enviar el correo:', error);
