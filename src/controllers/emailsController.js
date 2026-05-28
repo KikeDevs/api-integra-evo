@@ -12,6 +12,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOG_DIR  = path.join(__dirname, '../../logs');
 const LOG_FILE = path.join(LOG_DIR, 'emails_errors.txt');
 
+// 1x1 transparent GIF — devuelto por el pixel de tracking
+const PIXEL_GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+
 function logEmailError({ id_pago, id_servicio, destinatario, error }) {
     if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
 
@@ -117,7 +120,7 @@ export const testEmail = async (req, res) => {
 export const sendEmail = async (req, res) => {
 
     const url = "integra.infrahub.services";
-    
+
     const {
         asunto,
         descripcion,
@@ -129,16 +132,14 @@ export const sendEmail = async (req, res) => {
 
     if (!users || !Array.isArray(users) || users.length === 0) {
         return res.status(400).json({ success: false, message: "No se recibieron destinatarios" });
-    };
+    }
 
     if (!id_pago) {
         return res.status(400).json({ success: false, message: "Falta el id_pago" });
     }
 
-
     const token = crypto.randomBytes(32).toString('hex');
-
-    const expira = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
+    const expira = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     const transporter = nodemailer.createTransport({
         host: process.env.EMAIL_HOST,
@@ -153,14 +154,8 @@ export const sendEmail = async (req, res) => {
     const t = await sequelize.transaction();
 
     await sequelize.query(
-        `
-        INSERT INTO activos.servicios_pagos_tokens (id_pago, token, expira)
-        VALUES (?, ?, ?)
-        `,
-        {
-            replacements: [id_pago, token, expira],
-            transaction: t
-        }
+        `INSERT INTO activos.servicios_pagos_tokens (id_pago, token, expira) VALUES (?, ?, ?)`,
+        { replacements: [id_pago, token, expira], transaction: t }
     );
 
     await sequelize.query(
@@ -169,23 +164,33 @@ export const sendEmail = async (req, res) => {
     );
 
     const descripcionHtml = descripcion
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\n/g, '<br>');
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>');
 
     const estatusPago = parseEstatusPago(req.body);
-    const textoAccionPago = estatusPago === 5
-        ? 'Justifica el pago aquí'
-        : 'Registra el pago aquí';
-
-
+    const textoAccionPago = estatusPago === 5 ? 'Justifica el pago aquí' : 'Registra el pago aquí';
 
     try {
+        for (const d of users) {
 
-        for(const d of users) {
+            // 1. Insertar fila en correos_pagos primero para obtener el ID de tracking
+            const [, insertMeta] = await sequelize.query(
+                `INSERT INTO activos.correos_pagos (id_pago, remitente, destinatario, fecha_enviado, id_servicio)
+                 VALUES (?, ?, ?, NOW(), ?)`,
+                {
+                    replacements: [id_pago, process.env.EMAIL_USER, d.correo_empresarial, id_servicio],
+                    transaction: t
+                }
+            );
+            const correoId = insertMeta.insertId;
 
-            const mailOptions = {
+            // 2. Construir pixel de tracking con el ID de la fila recién creada
+            const pixelUrl = `${process.env.API_URL}/servicios/emails/track/${correoId}`;
+
+            // 3. Enviar el correo con el pixel embebido
+            const info = await transporter.sendMail({
                 from: process.env.EMAIL_USER,
                 to: d.correo_empresarial,
                 subject: asunto,
@@ -197,25 +202,23 @@ export const sendEmail = async (req, res) => {
                           <p style="font-style: italic; color: #4e73df; margin: 0px"><b>INTEGRA</b> | Sistema web de pagos</p>
                           <p style="margin: 0px"><small>Este mensaje fue generado automáticamente. No respondas este correo</small></p>
                           <img style="width: 60px;" src="/var/www/html/api_evo/public/img/LogoIntegraSVGSnTexto.svg" alt="Logo_integra">
-                        </div>`,
+                        </div>
+                        <img src="${pixelUrl}" width="1" height="1" style="display:none;mso-hide:all" alt="">`,
                 attachments: archivo
                     ? [{ filename: archivo, path: `/var/www/integra/storage/general/${archivo}` }]
                     : []
-            };
+            });
 
-            await transporter.sendMail(mailOptions);
-
+            // 4. Guardar confirmación SMTP — prueba de que Gmail aceptó el mensaje
             await sequelize.query(
-                `
-                INSERT INTO activos.correos_pagos (id_pago, remitente, destinatario, fecha_enviado, id_servicio)
-                VALUES (?, ?, ?, NOW(), ?)
-                `,
+                `UPDATE activos.correos_pagos
+                 SET message_id = ?, smtp_response = ?
+                 WHERE id = ?`,
                 {
                     replacements: [
-                        id_pago,
-                        process.env.EMAIL_USER,
-                        d.correo_empresarial,
-                        id_servicio
+                        info.messageId,
+                        (info.response ?? '').substring(0, 255),
+                        correoId
                     ],
                     transaction: t
                 }
@@ -224,13 +227,15 @@ export const sendEmail = async (req, res) => {
             await sequelize.query(
                 `INSERT INTO activos.pagos_eventos (id_pago, evento, detalle) VALUES (?, 'email_enviado', ?)`,
                 {
-                    replacements: [id_pago, JSON.stringify({ destinatario: d.correo_empresarial })],
+                    replacements: [id_pago, JSON.stringify({ destinatario: d.correo_empresarial, message_id: info.messageId })],
                     transaction: t
                 }
             );
         }
+
         await t.commit();
         res.status(200).json({ success: true, message: 'Correo enviado correctamente' });
+
     } catch (error) {
         console.error('Error al enviar el correo:', error);
         logEmailError({
@@ -244,3 +249,67 @@ export const sendEmail = async (req, res) => {
     }
 };
 
+// Llamado por el cliente de correo al renderizar el pixel — registra que el correo fue abierto
+export const trackEmail = async (req, res) => {
+    // Responder de inmediato con el GIF para no bloquear al cliente de correo
+    res.writeHead(200, {
+        'Content-Type': 'image/gif',
+        'Content-Length': PIXEL_GIF.length,
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+    });
+    res.end(PIXEL_GIF);
+
+    const { id } = req.params;
+    try {
+        // AND fecha_abierto IS NULL para no sobreescribir la primera apertura
+        await sequelize.query(
+            `UPDATE activos.correos_pagos SET fecha_abierto = NOW() WHERE id = ? AND fecha_abierto IS NULL`,
+            { replacements: [id] }
+        );
+    } catch (err) {
+        console.error('Error al registrar apertura de correo:', err.message);
+    }
+};
+
+// Consulta el estado de envío y apertura de correos, filtrable por id_pago e id_servicio
+export const getSentEmails = async (req, res) => {
+    const { id_pago, id_servicio } = req.query;
+
+    const conditions = [];
+    const replacements = [];
+
+    if (id_pago) {
+        conditions.push('id_pago = ?');
+        replacements.push(id_pago);
+    }
+    if (id_servicio) {
+        conditions.push('id_servicio = ?');
+        replacements.push(id_servicio);
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    try {
+        const [rows] = await sequelize.query(
+            `SELECT id, id_pago, id_servicio, destinatario, fecha_enviado,
+                    message_id, smtp_response, fecha_abierto
+             FROM activos.correos_pagos
+             ${where}
+             ORDER BY fecha_enviado DESC
+             LIMIT 200`,
+            { replacements }
+        );
+
+        res.status(200).json({
+            success: true,
+            total: rows.length,
+            correos: rows.map(r => ({
+                ...r,
+                abierto: !!r.fecha_abierto
+            }))
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
