@@ -212,8 +212,8 @@ export const sendEmail = async (req, res) => {
             // 4. Guardar confirmación SMTP — prueba de que Gmail aceptó el mensaje
             await sequelize.query(
                 `UPDATE activos.correos_pagos
-                 SET message_id = ?, smtp_response = ?
-                 WHERE id = ?`,
+                 SET messageId = ?, smtp_response = ?
+                 WHERE id_correo = ?`,
                 {
                     replacements: [
                         info.messageId,
@@ -264,7 +264,7 @@ export const trackEmail = async (req, res) => {
     try {
         // AND fecha_abierto IS NULL para no sobreescribir la primera apertura
         await sequelize.query(
-            `UPDATE activos.correos_pagos SET fecha_abierto = NOW() WHERE id = ? AND fecha_abierto IS NULL`,
+            `UPDATE activos.correos_pagos SET fecha_abierto = NOW() WHERE id_correo = ? AND fecha_abierto IS NULL`,
             { replacements: [id] }
         );
     } catch (err) {
@@ -292,8 +292,8 @@ export const getSentEmails = async (req, res) => {
 
     try {
         const [rows] = await sequelize.query(
-            `SELECT id, id_pago, id_servicio, destinatario, fecha_enviado,
-                    message_id, smtp_response, fecha_abierto
+            `SELECT id_correo, id_pago, id_servicio, destinatario, fecha_enviado,
+                    messageId, smtp_response, fecha_abierto
              FROM activos.correos_pagos
              ${where}
              ORDER BY fecha_enviado DESC
