@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { ImapFlow } from 'imapflow';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 import fs from 'fs';
@@ -315,6 +316,71 @@ export const getSentEmails = async (req, res) => {
             }))
         });
     } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Conecta a Gmail IMAP y detecta correos rebotados (MAILER-DAEMON), actualiza bounced en correos_pagos
+export const checkBounces = async (_req, res) => {
+    const client = new ImapFlow({
+        host: 'imap.gmail.com',
+        port: 993,
+        secure: true,
+        auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+        logger: false
+    });
+
+    const bounces = [];
+
+    try {
+        await client.connect();
+        await client.mailboxOpen('INBOX');
+
+        const uids = await client.search({ from: 'mailer-daemon@googlemail.com' }, { uid: true });
+
+        if (uids.length > 0) {
+            for await (const msg of client.fetch(uids, { envelope: true, source: true }, { uid: true })) {
+                const source = msg.source.toString('utf8');
+
+                // Extraer destinatario fallido del header estándar de rebote
+                const recipientMatch = source.match(/X-Failed-Recipients:\s*(.+)/i);
+                // Buscar todos los Message-ID en el cuerpo — el segundo suele ser el original
+                const msgIdMatches = [...source.matchAll(/Message-ID:\s*(<[^>]+>)/gi)];
+
+                const destinatario = recipientMatch?.[1]?.trim() ?? null;
+                const originalMsgId = msgIdMatches.length > 1 ? msgIdMatches[1][1] : null;
+
+                let updated = 0;
+
+                if (originalMsgId) {
+                    const [, meta] = await sequelize.query(
+                        `UPDATE activos.correos_pagos SET bounced = 1, bounce_reason = ? WHERE messageId = ? AND bounced = 0`,
+                        { replacements: [msg.envelope.subject?.substring(0, 255), originalMsgId] }
+                    );
+                    updated = meta.affectedRows;
+                } else if (destinatario) {
+                    const [, meta] = await sequelize.query(
+                        `UPDATE activos.correos_pagos SET bounced = 1, bounce_reason = ? WHERE LOWER(destinatario) = LOWER(?) AND bounced = 0`,
+                        { replacements: [msg.envelope.subject?.substring(0, 255), destinatario] }
+                    );
+                    updated = meta.affectedRows;
+                }
+
+                bounces.push({
+                    destinatario: destinatario ?? 'desconocido',
+                    originalMsgId: originalMsgId ?? null,
+                    asunto: msg.envelope.subject,
+                    fecha: msg.envelope.date,
+                    registros_actualizados: updated
+                });
+            }
+        }
+
+        await client.logout();
+        res.status(200).json({ success: true, total: bounces.length, bounces });
+
+    } catch (error) {
+        try { await client.logout(); } catch (_) {}
         res.status(500).json({ success: false, message: error.message });
     }
 };
