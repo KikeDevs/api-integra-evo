@@ -35,11 +35,11 @@ app.listen(PORT,HOST,() => {
     console.log(`Servidor escuchando en el puerto: ${PORT} en el HOST: ${HOST}`);
 })
 
-app.get('/api/', (req, res) => {
+app.get('/', (req, res) => {
     res.send('Hola mundo');
 })
 
-app.get('/api/health', (req, res) => {
+app.get('/health', (req, res) => {
     res.json({ status: 'ok', ts: new Date().toISOString() });
 })
 
