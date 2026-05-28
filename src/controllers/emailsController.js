@@ -177,19 +177,20 @@ export const sendEmail = async (req, res) => {
 
         for (const d of users) {
 
-            // 1. Insertar fila en correos_pagos primero para obtener el ID de tracking
-            const [, insertMeta] = await sequelize.query(
-                `INSERT INTO activos.correos_pagos (id_pago, remitente, destinatario, fecha_enviado, id_servicio)
-                 VALUES (?, ?, ?, NOW(), ?)`,
+            // 1. Generar token único de tracking por destinatario
+            const trackingToken = crypto.randomBytes(16).toString('hex');
+
+            await sequelize.query(
+                `INSERT INTO activos.correos_pagos (id_pago, remitente, destinatario, fecha_enviado, id_servicio, tracking_token)
+                 VALUES (?, ?, ?, NOW(), ?, ?)`,
                 {
-                    replacements: [id_pago, process.env.EMAIL_USER, d.correo_empresarial, id_servicio],
+                    replacements: [id_pago, process.env.EMAIL_USER, d.correo_empresarial, id_servicio, trackingToken],
                     transaction: t
                 }
             );
-            const correoId = insertMeta.insertId;
 
-            // 2. Construir pixel de tracking con el ID de la fila recién creada
-            const pixelUrl = `${process.env.API_URL}/servicios/emails/track/${correoId}`;
+            // 2. Construir pixel de tracking con el token único
+            const pixelUrl = `${process.env.API_URL}/servicios/emails/track/${trackingToken}`;
 
             // 3. Enviar el correo con el pixel embebido
             const info = await transporter.sendMail({
@@ -217,12 +218,12 @@ export const sendEmail = async (req, res) => {
             await sequelize.query(
                 `UPDATE activos.correos_pagos
                  SET messageId = ?, smtp_response = ?
-                 WHERE id_correo = ?`,
+                 WHERE tracking_token = ?`,
                 {
                     replacements: [
                         info.messageId,
                         (info.response ?? '').substring(0, 255),
-                        correoId
+                        trackingToken
                     ],
                     transaction: t
                 }
@@ -268,7 +269,7 @@ export const trackEmail = async (req, res) => {
     try {
         // AND fecha_abierto IS NULL para no sobreescribir la primera apertura
         await sequelize.query(
-            `UPDATE activos.correos_pagos SET fecha_abierto = NOW() WHERE id_correo = ? AND fecha_abierto IS NULL`,
+            `UPDATE activos.correos_pagos SET fecha_abierto = NOW() WHERE tracking_token = ? AND fecha_abierto IS NULL`,
             { replacements: [id] }
         );
     } catch (err) {
