@@ -39,6 +39,10 @@ app.get('/api/', (req, res) => {
     res.send('Hola mundo');
 })
 
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', ts: new Date().toISOString() });
+})
+
 app.post('/api/register', async (req, res) => {
     try {
         const { username, password } = req.body;
