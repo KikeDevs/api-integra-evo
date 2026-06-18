@@ -112,21 +112,34 @@ export const testEmail = async (req, res) => {
         }
     });
 
+    const destinatarios = ['infr.fullstack@hovanet.com', 'SAAC@HOVANET.COM'];
+
     try {
         mark('Verificando conexión SMTP...');
         await transporter.verify();
         mark('Conexión SMTP OK');
 
-        mark('Enviando correo...');
+        mark(`Enviando correo a: ${destinatarios.join(', ')}...`);
         const info = await transporter.sendMail({
             from: process.env.EMAIL_USER,
-            to: 'infr.fullstack@hovanet.com',
+            to: destinatarios.join(', '),
             subject: 'Test de correo - INTEGRA',
             html: `<p>Este es un correo de prueba enviado desde la API de INTEGRA.</p><p>Hora: ${new Date().toISOString()}</p>`
         });
-        mark(`Correo enviado. messageId=${info.messageId} response=${info.response}`);
+        mark(`Correo enviado OK. messageId=${info.messageId} response=${info.response}`);
 
-        res.status(200).json({ success: true, report });
+        res.status(200).json({
+            success: true,
+            smtp: {
+                host: process.env.EMAIL_HOST,
+                port: process.env.EMAIL_PORT,
+                remitente: process.env.EMAIL_USER,
+                destinatarios,
+                messageId: info.messageId,
+                smtp_response: info.response,
+            },
+            report
+        });
     } catch (error) {
         mark(`ERROR: ${error.message}`);
         res.status(500).json({ success: false, report, error: error.message });
