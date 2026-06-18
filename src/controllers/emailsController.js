@@ -226,16 +226,119 @@ export const sendEmail = async (req, res) => {
                 from: process.env.EMAIL_USER,
                 to: d.correo_empresarial,
                 subject: asunto,
-                html: `
-                        <p>Hola, ${d.nombre}! </p>
-                        <p>${descripcionHtml}</p>
-                        <p style="margin-bottom: 35px">Puedes notificar el pago accediendo al siguiente link de USO ÚNICO:<a href="https://${url}/integra/#!/servicios/subirPago/${token}"><b> ${textoAccionPago}</b></a></p>
-                        <div style="text-align: center; display: flex; flex-direction: column; align-items: center; justify-content:center; gap: 5px;">
-                          <p style="font-style: italic; color: #4e73df; margin: 0px"><b>INTEGRA</b> | Sistema web de pagos</p>
-                          <p style="margin: 0px"><small>Este mensaje fue generado automáticamente. No respondas este correo</small></p>
-                          <img style="width: 60px;" src="/var/www/html/api_evo/public/img/LogoIntegraSVGSnTexto.svg" alt="Logo_integra">
-                        </div>
-                        <img src="${pixelUrl}" width="1" height="1" style="display:none;mso-hide:all" alt="">`,
+                html: `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${asunto}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#eef1f8;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#eef1f8;padding:36px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(78,115,223,0.13);">
+
+          <!-- Banner -->
+          <tr>
+            <td style="background-color:#4e73df;background-image:linear-gradient(135deg,#4e73df 0%,#224abe 100%);padding:36px 40px 28px;text-align:center;">
+              <div style="display:inline-block;background-color:rgba(255,255,255,0.15);border-radius:50%;width:64px;height:64px;line-height:64px;font-size:32px;margin-bottom:14px;">&#128179;</div>
+              <h1 style="margin:0 0 4px;color:#ffffff;font-size:24px;font-weight:700;letter-spacing:0.5px;">Aviso de pago</h1>
+              <p style="margin:0;color:#c9d6ff;font-size:13px;">INTEGRA &mdash; Sistema web de pagos</p>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:36px 40px 24px;">
+              <p style="margin:0 0 8px;font-size:18px;font-weight:700;color:#222222;">Hola, ${d.nombre}</p>
+              <p style="margin:0 0 28px;font-size:15px;color:#555555;line-height:1.75;">${descripcionHtml}</p>
+
+              <!-- Steps -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:32px;">
+                <tr>
+                  <td style="padding:0 0 12px;">
+                    <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                      <tr>
+                        <td width="36" valign="top">
+                          <div style="width:28px;height:28px;border-radius:50%;background-color:#4e73df;color:#ffffff;font-size:13px;font-weight:700;text-align:center;line-height:28px;">1</div>
+                        </td>
+                        <td style="padding-top:4px;font-size:14px;color:#444444;">Haz clic en el botón de abajo para acceder al enlace seguro.</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:0 0 12px;">
+                    <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                      <tr>
+                        <td width="36" valign="top">
+                          <div style="width:28px;height:28px;border-radius:50%;background-color:#4e73df;color:#ffffff;font-size:13px;font-weight:700;text-align:center;line-height:28px;">2</div>
+                        </td>
+                        <td style="padding-top:4px;font-size:14px;color:#444444;">Sube tu comprobante o completa el formulario de pago.</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                      <tr>
+                        <td width="36" valign="top">
+                          <div style="width:28px;height:28px;border-radius:50%;background-color:#1cc88a;color:#ffffff;font-size:13px;font-weight:700;text-align:center;line-height:28px;">&#10003;</div>
+                        </td>
+                        <td style="padding-top:4px;font-size:14px;color:#444444;">&#161;Listo! Tu pago quedará registrado en el sistema.</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- CTA Button -->
+              <table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom:20px;">
+                <tr>
+                  <td align="center">
+                    <table cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td style="background-image:linear-gradient(135deg,#4e73df 0%,#224abe 100%);border-radius:8px;box-shadow:0 4px 12px rgba(78,115,223,0.4);">
+                          <a href="https://${url}/integra/#!/servicios/subirPago/${token}"
+                             style="display:inline-block;padding:16px 40px;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;letter-spacing:0.3px;">
+                            ${textoAccionPago} &rarr;
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Warning badge -->
+              <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td style="background-color:#fff8e1;border:1px solid #ffe082;border-radius:6px;padding:12px 16px;text-align:center;">
+                    <span style="font-size:13px;color:#b8860b;">&#9888;&nbsp; Este enlace es de <strong>uso &uacute;nico</strong> y expira en <strong>24 horas</strong>.</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color:#f4f6fb;border-top:1px solid #e3e8f4;padding:22px 40px;text-align:center;">
+              <img src="https://integra.infrahub.services/integra/assets/img/LogoIntegraSVGSnTexto.svg" alt="INTEGRA" style="height:36px;margin-bottom:10px;">
+              <p style="margin:0 0 4px;font-size:12px;color:#888888;">Este mensaje fue generado autom&aacute;ticamente &mdash; por favor no respondas este correo.</p>
+              <p style="margin:0;font-size:11px;color:#bbbbbb;">&copy; ${new Date().getFullYear()} INTEGRA &mdash; Todos los derechos reservados</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+  <img src="${pixelUrl}" width="1" height="1" style="display:none;mso-hide:all" alt="">
+</body>
+</html>`,
                 attachments: archivo
                     ? [{ filename: archivo, path: `/var/www/integra/storage/general/${archivo}` }]
                     : []

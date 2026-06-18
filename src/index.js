@@ -40,7 +40,7 @@ app.get('/', (req, res) => {
 })
 
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', ts: new Date().toISOString() });
+    res.json({version: '1.0.0', status: 'ok', ts: new Date().toISOString() });
 })
 
 app.post('/api/register', async (req, res) => {

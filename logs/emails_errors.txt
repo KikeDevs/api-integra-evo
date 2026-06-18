@@ -1,1 +1,2 @@
 [2026-05-28T21:11:21.573Z] | ID_PAGO=1 | ID_SERVICIO=1 | DESTINATARIO=luisenriqueiscc@gmail.com | ERROR=Positional replacement (?) 2 has no entry in the replacement map (replacements[2] is undefined).
+[2026-06-03T00:10:50.071Z] | ID_PAGO=152 | ID_SERVICIO=54 | DESTINATARIO=SAAC@HOVANET.COM, infr.fullstack@hovanet.com | ERROR=ENOENT: no such file or directory, open 'C:\var\www\integra\storage\general\5ac3dbd6132a26ec97325aef8f5a076d.pdf'
