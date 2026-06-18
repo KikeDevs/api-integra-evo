@@ -315,9 +315,7 @@ export const sendEmail = async (req, res) => {
               <!-- Warning badge -->
               <table cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
-                  <td style="background-color:#fff8e1;border:1px solid #ffe082;border-radius:6px;padding:12px 16px;text-align:center;">
-                    <span style="font-size:13px;color:#b8860b;">&#9888;&nbsp; Este enlace es de <strong>uso &uacute;nico</strong> y expira en <strong>24 horas</strong>.</span>
-                  </td>
+                  
                 </tr>
               </table>
             </td>
