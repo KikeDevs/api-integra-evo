@@ -105,7 +105,7 @@ export const testEmail = async (req, res) => {
         }
     });
 
-    const destinatarios = ['infr.fullstack@hovanet.com', 'SAAC@HOVANET.COM'];
+    const destinatarios = ['infr.fullstack@hovanet.com', 'SAAC@HOVANET.COM', 'luisenriqueiscc@gmail.com'];
 
     try {
         mark('Verificando conexión SMTP...');
