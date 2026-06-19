@@ -22,8 +22,11 @@ async function validarCorreo(correo) {
     try {
         const mx = await dns.resolveMx(dominio);
         if (!mx || mx.length === 0) return { valido: false, motivo: 'sin_mx' };
-    } catch {
-        return { valido: false, motivo: 'sin_mx' };
+    } catch (err) {
+        // ENODATA / ENOTFOUND = dominio sin MX real; otros errores = fallo de red, dejar pasar
+        if (err.code === 'ENODATA' || err.code === 'ENOTFOUND') {
+            return { valido: false, motivo: 'sin_mx' };
+        }
     }
     return { valido: true };
 }
