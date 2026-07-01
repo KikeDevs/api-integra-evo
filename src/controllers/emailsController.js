@@ -125,7 +125,6 @@ export const testEmail = async (req, res) => {
   <p>Hola, Usuario de Prueba</p>
   <p>Este es un correo de prueba del sistema INTEGRA.</p>
   <p>Hora: ${new Date().toISOString()}</p>
-  <p><a href="https://integra.infrahub.services/integra/#!/servicios/subirPago/dummy-token">Registra el pago aquí</a></p>
   <p>INTEGRA - Sistema web de pagos</p>
 </body>
 </html>`
