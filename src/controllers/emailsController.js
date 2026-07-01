@@ -118,7 +118,17 @@ export const testEmail = async (req, res) => {
             from: process.env.EMAIL_USER,
             to: destinatarios.join(', '),
             subject: 'Test de correo - INTEGRA',
-            text: `Correo de prueba enviado desde la API de INTEGRA.\n\nHora: ${new Date().toISOString()}\n\nRegistra el pago aquí: https://integra.infrahub.services/integra/#!/servicios/subirPago/dummy-token\n\nINTEGRA - Sistema web de pagos`
+            html: `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"></head>
+<body>
+  <p>Hola, Usuario de Prueba</p>
+  <p>Este es un correo de prueba del sistema INTEGRA.</p>
+  <p>Hora: ${new Date().toISOString()}</p>
+  <p><a href="https://integra.infrahub.services/integra/#!/servicios/subirPago/dummy-token">Registra el pago aquí</a></p>
+  <p>INTEGRA - Sistema web de pagos</p>
+</body>
+</html>`
         });
         mark(`Correo enviado OK. messageId=${info.messageId} response=${info.response}`);
 
