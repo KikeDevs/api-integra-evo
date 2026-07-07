@@ -246,27 +246,11 @@ export const testEmail = async (req, res) => {
 
 export const sendEmail = async (req, res) => {
 
-    const url = "integra.infrahub.services";
-
-    const {
-        asunto,
-        descripcion,
-        archivo,
-        users,
-        id_pago,
-        id_servicio
-    } = req.body;
+    const { users } = req.body;
 
     if (!users || !Array.isArray(users) || users.length === 0) {
         return res.status(400).json({ success: false, message: "No se recibieron destinatarios" });
     }
-
-    if (!id_pago) {
-        return res.status(400).json({ success: false, message: "Falta el id_pago" });
-    }
-
-    const token = crypto.randomBytes(32).toString('hex');
-    const expira = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     const transporter = nodemailer.createTransport({
         host: process.env.EMAIL_HOST,
@@ -278,120 +262,22 @@ export const sendEmail = async (req, res) => {
         }
     });
 
-    const t = await sequelize.transaction();
-
-    await sequelize.query(
-        `INSERT INTO activos.servicios_pagos_tokens (id_pago, token, expira) VALUES (?, ?, ?)`,
-        { replacements: [id_pago, token, expira], transaction: t }
-    );
-
-    await sequelize.query(
-        `INSERT INTO activos.pagos_eventos (id_pago, evento) VALUES (?, 'link_generado')`,
-        { replacements: [id_pago], transaction: t }
-    );
-
-    const descripcionHtml = descripcion
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/\n/g, '<br>');
-
-    const estatusPago = parseEstatusPago(req.body);
-    const textoAccionPago = estatusPago === 5 ? 'Justifica el pago aquí' : 'Registra el pago aquí';
-
     try {
-        const smtpDebug = [];
+        const resultados = [];
 
         for (const d of users) {
-
-            // 1. Validar formato y registros MX del correo antes de intentar enviar
-            const { valido, motivo } = await validarCorreo(d.correo_empresarial);
-
-            if (!valido) {
-                await sequelize.query(
-                    `INSERT INTO activos.correos_pagos (id_pago, remitente, destinatario, fecha_enviado, id_servicio, status)
-                     VALUES (?, ?, ?, NOW(), ?, ?)`,
-                    { replacements: [id_pago, process.env.EMAIL_USER, d.correo_empresarial, id_servicio, motivo], transaction: t }
-                );
-                smtpDebug.push({ destinatario: d.correo_empresarial, status: motivo, messageId: null, response: null });
-                continue;
-            }
-
-            // 2. Generar token único de tracking por destinatario
-            const trackingToken = crypto.randomBytes(16).toString('hex');
-
-            await sequelize.query(
-                `INSERT INTO activos.correos_pagos (id_pago, remitente, destinatario, fecha_enviado, id_servicio, tracking_token, status)
-                 VALUES (?, ?, ?, NOW(), ?, ?, 'pendiente')`,
-                {
-                    replacements: [id_pago, process.env.EMAIL_USER, d.correo_empresarial, id_servicio, trackingToken],
-                    transaction: t
-                }
-            );
-
-            // 3. Construir pixel de tracking con el token único
-            const pixelUrl = `${process.env.API_URL}/servicios/emails/track/${trackingToken}`;
-
-            // 4. Enviar el correo con el pixel embebido
             const info = await transporter.sendMail({
                 from: process.env.EMAIL_USER,
                 to: d.correo_empresarial,
-                subject: asunto,
-                html: `<!DOCTYPE html>
-<html lang="es">
-<head><meta charset="UTF-8"></head>
-<body>
-  <p>Hola, ${d.nombre}</p>
-  <p>${descripcionHtml}</p>
-  <p><a href="https://${url}/integra/#!/servicios/subirPago/${token}">${textoAccionPago}</a></p>
-  <p>INTEGRA | Sistema web de pagos</p>
-  <small>Este mensaje fue generado automáticamente. No respondas este correo.</small>
-  <!-- <img src="${pixelUrl}" width="1" height="1" style="display:none;mso-hide:all" alt=""> -->
-</body>
-</html>`,
-                attachments: archivo
-                    ? [{ filename: archivo, path: `/var/www/integra/storage/general/${archivo}` }]
-                    : []
+                subject: 'Prueba',
+                text: 'Hola prueba'
             });
-
-            smtpDebug.push({ destinatario: d.correo_empresarial, messageId: info.messageId, response: info.response });
-
-            // 5. Guardar confirmación SMTP — prueba de que Gmail aceptó el mensaje
-            await sequelize.query(
-                `UPDATE activos.correos_pagos
-                 SET messageId = ?, smtp_response = ?, status = 'enviado'
-                 WHERE tracking_token = ?`,
-                {
-                    replacements: [
-                        info.messageId,
-                        (info.response ?? '').substring(0, 255),
-                        trackingToken
-                    ],
-                    transaction: t
-                }
-            );
-
-            await sequelize.query(
-                `INSERT INTO activos.pagos_eventos (id_pago, evento, detalle) VALUES (?, 'email_enviado', ?)`,
-                {
-                    replacements: [id_pago, JSON.stringify({ destinatario: d.correo_empresarial, message_id: info.messageId })],
-                    transaction: t
-                }
-            );
+            resultados.push({ destinatario: d.correo_empresarial, messageId: info.messageId, response: info.response });
         }
 
-        await t.commit();
-        res.status(200).json({ success: true, message: 'Correo enviado correctamente', debug_smtp: smtpDebug });
+        res.status(200).json({ success: true, resultados });
 
     } catch (error) {
-        console.error('Error al enviar el correo:', error);
-        logEmailError({
-            id_pago,
-            id_servicio,
-            destinatario: users?.map(u => u.correo_empresarial).join(', '),
-            error: error.message
-        });
-        await t.rollback();
         res.status(500).json({ success: false, message: error.message });
     }
 };
