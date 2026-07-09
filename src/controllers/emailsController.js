@@ -246,11 +246,27 @@ export const testEmail = async (req, res) => {
 
 export const sendEmail = async (req, res) => {
 
-    const { users } = req.body;
+    const url = "integra.infrahub.services";
+
+    const {
+        asunto,
+        descripcion,
+        archivo,
+        users,
+        id_pago,
+        id_servicio
+    } = req.body;
 
     if (!users || !Array.isArray(users) || users.length === 0) {
         return res.status(400).json({ success: false, message: "No se recibieron destinatarios" });
     }
+
+    if (!id_pago) {
+        return res.status(400).json({ success: false, message: "Falta el id_pago" });
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expira = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     const transporter = nodemailer.createTransport({
         host: process.env.EMAIL_HOST,
@@ -262,22 +278,196 @@ export const sendEmail = async (req, res) => {
         }
     });
 
+    const t = await sequelize.transaction();
+
+    await sequelize.query(
+        `INSERT INTO activos.servicios_pagos_tokens (id_pago, token, expira) VALUES (?, ?, ?)`,
+        { replacements: [id_pago, token, expira], transaction: t }
+    );
+
+    await sequelize.query(
+        `INSERT INTO activos.pagos_eventos (id_pago, evento) VALUES (?, 'link_generado')`,
+        { replacements: [id_pago], transaction: t }
+    );
+
+    const descripcionHtml = descripcion
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>');
+
+    const estatusPago = parseEstatusPago(req.body);
+    const textoAccionPago = estatusPago === 5 ? 'Justifica el pago aquí' : 'Registra el pago aquí';
+
     try {
-        const resultados = [];
+        const smtpDebug = [];
 
         for (const d of users) {
+
+            const { valido, motivo } = await validarCorreo(d.correo_empresarial);
+
+            if (!valido) {
+                await sequelize.query(
+                    `INSERT INTO activos.correos_pagos (id_pago, remitente, destinatario, fecha_enviado, id_servicio, status)
+                     VALUES (?, ?, ?, NOW(), ?, ?)`,
+                    { replacements: [id_pago, process.env.EMAIL_USER, d.correo_empresarial, id_servicio, motivo], transaction: t }
+                );
+                smtpDebug.push({ destinatario: d.correo_empresarial, status: motivo, messageId: null, response: null });
+                continue;
+            }
+
+            const trackingToken = crypto.randomBytes(16).toString('hex');
+
+            await sequelize.query(
+                `INSERT INTO activos.correos_pagos (id_pago, remitente, destinatario, fecha_enviado, id_servicio, tracking_token, status)
+                 VALUES (?, ?, ?, NOW(), ?, ?, 'pendiente')`,
+                {
+                    replacements: [id_pago, process.env.EMAIL_USER, d.correo_empresarial, id_servicio, trackingToken],
+                    transaction: t
+                }
+            );
+
+            const pixelUrl = `${process.env.API_URL}/servicios/emails/track/${trackingToken}`;
+
             const info = await transporter.sendMail({
                 from: process.env.EMAIL_USER,
                 to: d.correo_empresarial,
-                subject: 'Prueba',
-                text: 'Hola prueba'
+                subject: asunto,
+                html: `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${asunto}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#eef1f8;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#eef1f8;padding:36px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(78,115,223,0.13);">
+
+          <!-- Banner -->
+          <tr>
+            <td style="background-color:#4e73df;background-image:linear-gradient(135deg,#4e73df 0%,#224abe 100%);padding:36px 40px 28px;text-align:center;">
+              <div style="display:inline-block;background-color:rgba(255,255,255,0.15);border-radius:50%;width:64px;height:64px;line-height:64px;font-size:32px;margin-bottom:14px;">&#128179;</div>
+              <h1 style="margin:0 0 4px;color:#ffffff;font-size:24px;font-weight:700;letter-spacing:0.5px;">Aviso de pago</h1>
+              <p style="margin:0;color:#c9d6ff;font-size:13px;">INTEGRA &mdash; Sistema web de pagos</p>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:36px 40px 24px;">
+              <p style="margin:0 0 8px;font-size:18px;font-weight:700;color:#222222;">Hola, ${d.nombre}</p>
+              <p style="margin:0 0 28px;font-size:15px;color:#555555;line-height:1.75;">${descripcionHtml}</p>
+
+              <!-- Steps -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:32px;">
+                <tr>
+                  <td style="padding:0 0 12px;">
+                    <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                      <tr>
+                        <td width="36" valign="top">
+                          <div style="width:28px;height:28px;border-radius:50%;background-color:#4e73df;color:#ffffff;font-size:13px;font-weight:700;text-align:center;line-height:28px;">1</div>
+                        </td>
+                        <td style="padding-top:4px;font-size:14px;color:#444444;">Haz clic en el enlace de abajo para acceder al portal seguro.</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:0 0 12px;">
+                    <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                      <tr>
+                        <td width="36" valign="top">
+                          <div style="width:28px;height:28px;border-radius:50%;background-color:#4e73df;color:#ffffff;font-size:13px;font-weight:700;text-align:center;line-height:28px;">2</div>
+                        </td>
+                        <td style="padding-top:4px;font-size:14px;color:#444444;">Sube tu comprobante o completa el formulario de pago.</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                      <tr>
+                        <td width="36" valign="top">
+                          <div style="width:28px;height:28px;border-radius:50%;background-color:#1cc88a;color:#ffffff;font-size:13px;font-weight:700;text-align:center;line-height:28px;">&#10003;</div>
+                        </td>
+                        <td style="padding-top:4px;font-size:14px;color:#444444;">&#161;Listo! Tu pago quedará registrado en el sistema.</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- CTA Link -->
+              <p style="margin:0 0 8px;font-size:14px;color:#444444;">Accede al portal de pago con el siguiente enlace de <strong>uso único</strong>:</p>
+              <p style="margin:0 0 24px;font-size:14px;">
+                <a href="https://${url}/integra/#!/servicios/subirPago/${token}" style="color:#4e73df;">${textoAccionPago}</a>
+              </p>
+              <p style="margin:0;font-size:12px;color:#999999;">Este enlace expira en 24 horas.</p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color:#f4f6fb;border-top:1px solid #e3e8f4;padding:22px 40px;text-align:center;">
+              <img src="https://integra.infrahub.services/integra/assets/img/LogoIntegraSVGSnTexto.svg" alt="INTEGRA" style="height:36px;margin-bottom:10px;">
+              <p style="margin:0 0 4px;font-size:12px;color:#888888;">Este mensaje fue generado autom&aacute;ticamente &mdash; por favor no respondas este correo.</p>
+              <p style="margin:0;font-size:11px;color:#bbbbbb;">&copy; ${new Date().getFullYear()} INTEGRA &mdash; Todos los derechos reservados</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+  <!-- <img src="${pixelUrl}" width="1" height="1" style="display:none;mso-hide:all" alt=""> -->
+</body>
+</html>`,
+                attachments: archivo
+                    ? [{ filename: archivo, path: `/var/www/integra/storage/general/${archivo}` }]
+                    : []
             });
-            resultados.push({ destinatario: d.correo_empresarial, messageId: info.messageId, response: info.response });
+
+            smtpDebug.push({ destinatario: d.correo_empresarial, messageId: info.messageId, response: info.response });
+
+            await sequelize.query(
+                `UPDATE activos.correos_pagos
+                 SET messageId = ?, smtp_response = ?, status = 'enviado'
+                 WHERE tracking_token = ?`,
+                {
+                    replacements: [
+                        info.messageId,
+                        (info.response ?? '').substring(0, 255),
+                        trackingToken
+                    ],
+                    transaction: t
+                }
+            );
+
+            await sequelize.query(
+                `INSERT INTO activos.pagos_eventos (id_pago, evento, detalle) VALUES (?, 'email_enviado', ?)`,
+                {
+                    replacements: [id_pago, JSON.stringify({ destinatario: d.correo_empresarial, message_id: info.messageId })],
+                    transaction: t
+                }
+            );
         }
 
-        res.status(200).json({ success: true, resultados });
+        await t.commit();
+        res.status(200).json({ success: true, message: 'Correo enviado correctamente', debug_smtp: smtpDebug });
 
     } catch (error) {
+        console.error('Error al enviar el correo:', error);
+        logEmailError({
+            id_pago,
+            id_servicio,
+            destinatario: users?.map(u => u.correo_empresarial).join(', '),
+            error: error.message
+        });
+        await t.rollback();
         res.status(500).json({ success: false, message: error.message });
     }
 };
