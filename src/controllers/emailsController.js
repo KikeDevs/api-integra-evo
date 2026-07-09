@@ -423,7 +423,7 @@ export const sendEmail = async (req, res) => {
       </td>
     </tr>
   </table>
-  <!-- <img src="${pixelUrl}" width="1" height="1" style="display:none;mso-hide:all" alt=""> -->
+  <img src="${pixelUrl}" width="1" height="1" style="display:none;mso-hide:all" alt="">
 </body>
 </html>`,
                 attachments: archivo
